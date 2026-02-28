@@ -234,7 +234,7 @@ class DiscordNotifier(BaseNotifier):
                 meta.append("Free")
             meta_str = " | ".join(meta)
             embed: dict[str, object] = {
-                "title": f"[{_section_label(v)}] {v['title']}",
+                "title": f"{creator_display_name} - [{_section_label(v)}] {v['title']}",
                 "url": v["url"],
                 "color": 0xD63031,
                 "description": meta_str,

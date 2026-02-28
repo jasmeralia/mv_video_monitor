@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.4] - 2026-02-28
+
+### Changed
+- Discord video embed titles now include creator display name prefix:
+  - Format: `{Creator Name} - [Regular|Mobile] {Video Title}`
+  - Example: `Ashley Alban - [Regular] Sundress Ass & Feet Tease`
+
 ## [1.1.3] - 2026-02-28
 
 ### Fixed
