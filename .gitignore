@@ -1,3 +1,8 @@
 *.html
 __pycache__
 *.yaml
+.mypy_cache
+.ruff_cache
+.claude
+.tmp-ci-venv*
+download.jpg

@@ -9,8 +9,8 @@ services:
 
     # Mount your config file and persistent data directory
     volumes:
-      - ./config:/config:ro   # config.yaml is read from here
-      - ./data:/data           # database and logs are written here
+      - /mnt/myzmirror/mv_video_monitor/config:/config:ro   # config.yaml is read from here
+      - /mnt/myzmirror/mv_video_monitor/data:/data           # database and logs are written here
 
     environment:
       # Path to the config file inside the container (default shown; override if needed)
