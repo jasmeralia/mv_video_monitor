@@ -203,6 +203,12 @@ manyvids-monitor/
 - Resolve all reported issues before commit/push.
 - This is automatic and required on every change unless explicitly told otherwise.
 
+### Mandatory Release Hygiene Policy
+- For every change, update `CHANGELOG.md` with an entry describing what changed.
+- For every code change release, bump the application version in `src/version.py`.
+- For every bumped version, create a Git tag (for example `v1.2.3`) and push it to GitHub.
+- These steps are mandatory and performed automatically unless explicitly told otherwise.
+
 ### Testing Strategy
 - Test scraper with various creators to ensure consistency
 - Mock Playwright responses for unit tests
