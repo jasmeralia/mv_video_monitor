@@ -1,0 +1,23 @@
+services:
+  monitor:
+    # Pre-built image from GHCR — replace with a specific tag for production use
+    # e.g. ghcr.io/jasmeralia/mv_video_monitor:1.0.0
+    image: ghcr.io/jasmeralia/mv_video_monitor:master
+
+    # Uncomment to build locally instead of pulling from GHCR:
+    # build: .
+
+    # Mount your config file and persistent data directory
+    volumes:
+      - ./config:/config:ro   # config.yaml is read from here
+      - ./data:/data           # database and logs are written here
+
+    environment:
+      # Path to the config file inside the container (default shown; override if needed)
+      CONFIG_PATH: /config/config.yaml
+
+      # Set to "1" or "true" to scrape without writing to the DB or sending notifications
+      # DRY_RUN: "1"
+
+    # The container exits after one run. Remove it automatically when done.
+    restart: "no"
