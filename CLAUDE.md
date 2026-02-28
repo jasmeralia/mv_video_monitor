@@ -195,6 +195,14 @@ manyvids-monitor/
 
 ## Development Notes
 
+### Mandatory Local Validation Policy
+- After any code change, always run linting/type checks in the project virtual environment before finishing:
+  - `ruff check src`
+  - `ruff format --check src`
+  - `mypy src`
+- Resolve all reported issues before commit/push.
+- This is automatic and required on every change unless explicitly told otherwise.
+
 ### Testing Strategy
 - Test scraper with various creators to ensure consistency
 - Mock Playwright responses for unit tests

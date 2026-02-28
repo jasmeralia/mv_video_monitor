@@ -2,6 +2,7 @@ import json
 import logging
 import smtplib
 import urllib.error
+import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -36,6 +37,20 @@ def _creator_page_url(videos: list[dict]) -> str | None:
         f"https://www.manyvids.com/Profile/{creator_id}/{creator_name}"
         "/Store/Videos?sort=newest"
     )
+
+
+def _email_thumbnail_url(video: dict) -> str | None:
+    """Normalize thumbnail URL to MV's image proxy for broader email-client compatibility."""
+    raw = video.get("thumbnail_url")
+    if not raw:
+        return None
+    url = str(raw).strip()
+    if not url:
+        return None
+    if "img.manyvids.com/o/v1/" in url:
+        return url
+    encoded = urllib.parse.quote(url, safe="")
+    return f"https://img.manyvids.com/o/v1/{encoded}?w=600&q=80"
 
 
 class BaseNotifier(ABC):
@@ -133,7 +148,7 @@ class EmailNotifier(BaseNotifier):
             else:
                 meta_parts.append("Free")
             meta_html = "  &nbsp;|&nbsp;  ".join(meta_parts)
-            thumbnail_url = v.get("thumbnail_url")
+            thumbnail_url = _email_thumbnail_url(v)
             if thumbnail_url:
                 thumb_html = (
                     f'<a href="{escape(v["url"])}" '
@@ -162,7 +177,14 @@ class EmailNotifier(BaseNotifier):
 
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         creator_header_link = ""
+        creator_name_html = escape(creator)
         if creator_url:
+            creator_name_html = (
+                f'<a href="{escape(creator_url)}" '
+                'style="color:#2d3436;text-decoration:none;">'
+                f"{escape(creator)}"
+                "</a>"
+            )
             creator_header_link = (
                 f'<p style="margin-top: 0; margin-bottom: 16px;">'
                 f'<a href="{escape(creator_url)}" '
@@ -174,7 +196,7 @@ class EmailNotifier(BaseNotifier):
 <html>
 <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <h2 style="color: #2d3436; margin-bottom: 4px;">
-    {count} New Video{"s" if count != 1 else ""} from {escape(creator)}
+    {count} New Video{"s" if count != 1 else ""} from {creator_name_html}
   </h2>
   {creator_header_link}
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 16px;">

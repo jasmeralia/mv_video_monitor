@@ -10,6 +10,7 @@ from .database import Database
 from .notifier import create_notifier
 from .scraper import ManyVidsScraper
 from .utils import load_config, setup_logging
+from .version import get_app_version
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,8 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
     """
     config = load_config(config_path)
     setup_logging(config)
+    app_version = get_app_version()
+    logger.info(f"ManyVids monitor version: {app_version}")
 
     if dry_run:
         logger.info("=== DRY RUN MODE — no DB writes or notifications ===")

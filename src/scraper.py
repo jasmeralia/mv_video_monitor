@@ -301,8 +301,9 @@ class ManyVidsScraper:
                         break
 
                     for v in page_videos:
-                        if not v.video_type:
-                            v.video_type = section_name
+                        # Force section label from source page so notifications can
+                        # consistently distinguish regular vs mobile listings.
+                        v.video_type = section_name
 
                     all_videos.extend(page_videos)
 
