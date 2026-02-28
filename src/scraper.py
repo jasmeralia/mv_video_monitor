@@ -31,8 +31,10 @@ _VIDEO_PATTERN = re.compile(
     r'\{"id":"(\d+)"'  # group 1: numeric video ID (at start of object)
     r',"title":"(.*?)"'  # group 2: title (HTML-encoded, immediately follows id)
     r'.*?"slug":"([^"]+)"'  # group 3: URL slug
-    r'.*?"regular":"([^"]*)"'  # group 4: regular price (may be empty string)
-    r'.*?"duration":"([^"]*)"',  # group 5: duration string (e.g. "02:13")
+    r'.*?"thumbnail":\{"url":"([^"]+)"\}'  # group 4: thumbnail URL
+    r'.*?"regular":"([^"]*)"'  # group 5: regular price (may be empty string)
+    r'.*?"type":"([^"]+)"'  # group 6: section type (e.g. regular/mobile)
+    r'.*?"duration":"([^"]*)"',  # group 7: duration string (e.g. "02:13")
     re.DOTALL,
 )
 
@@ -46,6 +48,8 @@ class VideoData:
     title: str
     slug: str
     url: str
+    video_type: str
+    thumbnail_url: Optional[str]
     price_regular: Optional[str]
     duration: Optional[str]
 
@@ -55,6 +59,8 @@ class VideoData:
             "title": self.title,
             "slug": self.slug,
             "url": self.url,
+            "video_type": self.video_type,
+            "thumbnail_url": self.thumbnail_url,
             "price_regular": self.price_regular,
             "duration": self.duration,
         }
@@ -77,9 +83,11 @@ class ScraperBlockedError(ScraperError):
     pass
 
 
-def _build_page_url(creator_id: str, creator_name: str, page: int) -> str:
+def _build_page_url(
+    creator_id: str, creator_name: str, page: int, vertical: int
+) -> str:
     base = f"{BASE_URL}/Profile/{creator_id}/{creator_name}/Store/Videos"
-    params = {"sort": "newest"}
+    params = {"sort": "newest", "vertical": str(vertical)}
     if page > 1:
         params["page"] = str(page)
     return f"{base}?{urlencode(params)}"
@@ -124,9 +132,12 @@ def _extract_rsc_video_data(html_content: str) -> tuple[list[VideoData], int]:
 
             title = html_module.unescape(vm.group(2))
             slug = vm.group(3)
-            price_raw = vm.group(4).strip()
+            thumb_raw = vm.group(4).strip()
+            thumbnail_url = thumb_raw if thumb_raw else None
+            price_raw = vm.group(5).strip()
             price = price_raw if price_raw else None
-            duration_raw = vm.group(5).strip()
+            video_type = vm.group(6).strip().lower() or "regular"
+            duration_raw = vm.group(7).strip()
             duration = duration_raw if duration_raw else None
 
             videos.append(
@@ -135,6 +146,8 @@ def _extract_rsc_video_data(html_content: str) -> tuple[list[VideoData], int]:
                     title=title,
                     slug=slug,
                     url=f"{BASE_URL}/Video/{vid_id}/{slug}",
+                    video_type=video_type,
+                    thumbnail_url=thumbnail_url,
                     price_regular=price,
                     duration=duration,
                 )
@@ -245,49 +258,69 @@ class ManyVidsScraper:
             raise ScraperError("Browser context is not initialized")
         page = await self._context.new_page()
         all_videos: list[VideoData] = []
-        total_pages = 1
+        total_pages = 0
+        sections = [("regular", 1), ("mobile", 2)]
 
         try:
-            for page_num in range(1, 200):  # hard cap to prevent infinite loops
-                if page_num > 1:
-                    delay = random.uniform(
-                        self.config["scraping"]["delay_between_pages_min"],
-                        self.config["scraping"]["delay_between_pages_max"],
+            for section_name, section_vertical in sections:
+                section_total_pages = 1
+
+                for page_num in range(1, 200):  # hard cap to prevent infinite loops
+                    if page_num > 1 or section_vertical > 1:
+                        delay = random.uniform(
+                            self.config["scraping"]["delay_between_pages_min"],
+                            self.config["scraping"]["delay_between_pages_max"],
+                        )
+                        logger.debug(
+                            f"Creator {creator_name}: waiting {delay:.1f}s before "
+                            f"{section_name} page {page_num}"
+                        )
+                        await asyncio.sleep(delay)
+
+                    url = _build_page_url(
+                        creator_id,
+                        creator_name,
+                        page_num,
+                        vertical=section_vertical,
                     )
                     logger.debug(
-                        f"Creator {creator_name}: waiting {delay:.1f}s before page {page_num}"
+                        f"Creator {creator_name}: fetching {section_name} page "
+                        f"{page_num} — {url}"
                     )
-                    await asyncio.sleep(delay)
 
-                url = _build_page_url(creator_id, creator_name, page_num)
-                logger.debug(
-                    f"Creator {creator_name}: fetching page {page_num} — {url}"
-                )
-
-                html_content = await self._load_page(page, url)
-                page_videos, total_pages = _extract_rsc_video_data(html_content)
-
-                if not page_videos:
-                    logger.warning(
-                        f"Creator {creator_name}: no videos on page {page_num}, "
-                        "stopping pagination"
+                    html_content = await self._load_page(page, url)
+                    page_videos, section_total_pages = _extract_rsc_video_data(
+                        html_content
                     )
-                    break
 
-                all_videos.extend(page_videos)
+                    if not page_videos:
+                        logger.info(
+                            f"Creator {creator_name}: no {section_name} videos on "
+                            f"page {page_num}, stopping this section"
+                        )
+                        break
 
-                # Early stop: if every video on this page is already known,
-                # all subsequent (older) pages will also be known
-                page_ids = {v.video_id for v in page_videos}
-                if page_ids.issubset(known_video_ids):
-                    logger.info(
-                        f"Creator {creator_name}: all videos on page {page_num} already known, "
-                        f"stopping (page {page_num}/{total_pages})"
-                    )
-                    break
+                    for v in page_videos:
+                        if not v.video_type:
+                            v.video_type = section_name
 
-                if page_num >= total_pages:
-                    break
+                    all_videos.extend(page_videos)
+
+                    # Early stop: if every video on this page is already known,
+                    # all subsequent (older) pages will also be known
+                    page_ids = {v.video_id for v in page_videos}
+                    if page_ids.issubset(known_video_ids):
+                        logger.info(
+                            f"Creator {creator_name}: all {section_name} videos on "
+                            f"page {page_num} already known, stopping "
+                            f"(page {page_num}/{section_total_pages})"
+                        )
+                        break
+
+                    if page_num >= section_total_pages:
+                        break
+
+                total_pages += section_total_pages
 
         finally:
             await page.close()

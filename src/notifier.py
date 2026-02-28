@@ -1,6 +1,7 @@
 import json
 import logging
 import smtplib
+import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -9,6 +10,32 @@ from email.mime.text import MIMEText
 from html import escape
 
 logger = logging.getLogger(__name__)
+
+DISCORD_WEBHOOK_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/132.0.0.0 Safari/537.36"
+)
+
+
+def _section_label(video: dict) -> str:
+    video_type = str(video.get("video_type", "")).strip().lower()
+    if video_type == "mobile":
+        return "Mobile"
+    return "Regular"
+
+
+def _creator_page_url(videos: list[dict]) -> str | None:
+    if not videos:
+        return None
+    creator_id = videos[0].get("creator_id")
+    creator_name = videos[0].get("creator_name")
+    if not creator_id or not creator_name:
+        return None
+    return (
+        f"https://www.manyvids.com/Profile/{creator_id}/{creator_name}"
+        "/Store/Videos?sort=newest"
+    )
 
 
 class BaseNotifier(ABC):
@@ -66,12 +93,16 @@ class EmailNotifier(BaseNotifier):
             return False
 
     def _build_text_email(self, creator: str, videos: list[dict]) -> str:
+        creator_url = _creator_page_url(videos)
         lines = [
             f"{len(videos)} new video{'s' if len(videos) != 1 else ''} from {creator}",
             "",
         ]
+        if creator_url:
+            lines.append(f"Creator page: {creator_url}")
+            lines.append("")
         for v in videos:
-            lines.append(f"  {v['title']}")
+            lines.append(f"  [{_section_label(v)}] {v['title']}")
             meta = []
             if v.get("duration"):
                 meta.append(v["duration"])
@@ -90,9 +121,11 @@ class EmailNotifier(BaseNotifier):
 
     def _build_html_email(self, creator: str, videos: list[dict]) -> str:
         count = len(videos)
+        creator_url = _creator_page_url(videos)
         video_rows = ""
         for v in videos:
             meta_parts = []
+            meta_parts.append(_section_label(v))
             if v.get("duration"):
                 meta_parts.append(escape(v["duration"]))
             if v.get("price_regular"):
@@ -100,10 +133,25 @@ class EmailNotifier(BaseNotifier):
             else:
                 meta_parts.append("Free")
             meta_html = "  &nbsp;|&nbsp;  ".join(meta_parts)
+            thumbnail_url = v.get("thumbnail_url")
+            if thumbnail_url:
+                thumb_html = (
+                    f'<a href="{escape(v["url"])}" '
+                    'style="display:block;line-height:0;">'
+                    f'<img src="{escape(thumbnail_url)}" alt="" width="180" '
+                    'style="display:block;border-radius:6px;border:0;'
+                    'width:180px;height:auto;"/>'
+                    "</a>"
+                )
+            else:
+                thumb_html = ""
 
             video_rows += f"""
             <tr>
-              <td style="padding: 12px 8px; border-bottom: 1px solid #eee;">
+              <td style="padding: 12px 8px; border-bottom: 1px solid #eee; width: 190px; vertical-align: top;">
+                {thumb_html}
+              </td>
+              <td style="padding: 12px 8px; border-bottom: 1px solid #eee; vertical-align: top;">
                 <a href="{escape(v["url"])}"
                    style="font-size: 15px; color: #d63031; text-decoration: none; font-weight: bold;">
                   {escape(v["title"])}
@@ -113,12 +161,22 @@ class EmailNotifier(BaseNotifier):
             </tr>"""
 
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        creator_header_link = ""
+        if creator_url:
+            creator_header_link = (
+                f'<p style="margin-top: 0; margin-bottom: 16px;">'
+                f'<a href="{escape(creator_url)}" '
+                'style="color: #0984e3; text-decoration: none;">'
+                "Open creator page on ManyVids"
+                "</a></p>"
+            )
         return f"""<!DOCTYPE html>
 <html>
 <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <h2 style="color: #2d3436; margin-bottom: 4px;">
     {count} New Video{"s" if count != 1 else ""} from {escape(creator)}
   </h2>
+  {creator_header_link}
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 16px;">
     {video_rows}
   </table>
@@ -140,6 +198,7 @@ class DiscordNotifier(BaseNotifier):
         description_lines = []
         for v in new_videos:
             meta = []
+            meta.append(_section_label(v))
             if v.get("duration"):
                 meta.append(v["duration"])
             if v.get("price_regular"):
@@ -149,12 +208,16 @@ class DiscordNotifier(BaseNotifier):
             meta_str = " | ".join(meta)
             description_lines.append(f"**[{v['title']}]({v['url']})**\n{meta_str}")
 
+        description = "\n\n".join(description_lines)
+        if len(description) > 3800:
+            description = description[:3797] + "..."
+
         payload = {
             "embeds": [
                 {
                     "title": f"{count} new video{'s' if count != 1 else ''} from {creator_display_name}",
                     "color": 0xD63031,
-                    "description": "\n\n".join(description_lines),
+                    "description": description,
                     "footer": {
                         "text": f"Detected: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
                     },
@@ -166,7 +229,12 @@ class DiscordNotifier(BaseNotifier):
         req = urllib.request.Request(
             self.webhook_url,
             data=data,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Accept-Language": "en-US,en;q=0.9",
+                "User-Agent": DISCORD_WEBHOOK_UA,
+            },
         )
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
@@ -177,6 +245,16 @@ class DiscordNotifier(BaseNotifier):
                 f"Discord notification sent for {count} new videos from {creator_display_name}"
             )
             return True
+        except urllib.error.HTTPError as e:
+            try:
+                err_body = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                err_body = "<unable to read response body>"
+            logger.error(
+                f"Discord webhook failed for {creator_display_name}: "
+                f"HTTP {e.code} {e.reason}; response={err_body}"
+            )
+            return False
         except Exception as e:
             logger.error(
                 f"Failed to send Discord notification for {creator_display_name}: {e}"

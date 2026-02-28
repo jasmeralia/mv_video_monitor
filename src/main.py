@@ -101,9 +101,17 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
                     f"(dry run — skipping DB check)"
                 )
             else:
+                scraped_video_dicts = [
+                    {
+                        **v.to_dict(),
+                        "creator_id": creator_id,
+                        "creator_name": creator_name,
+                    }
+                    for v in result.videos
+                ]
                 new_videos = db.insert_new_videos(
                     creator_id,
-                    [v.to_dict() for v in result.videos],
+                    scraped_video_dicts,
                 )
                 db.update_creator_check(creator_id, "ok")
                 creators_checked += 1

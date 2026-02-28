@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS videos (
     title TEXT NOT NULL,
     slug TEXT NOT NULL,
     url TEXT NOT NULL,
+    video_type TEXT,
+    thumbnail_url TEXT,
     price_regular TEXT,
     duration TEXT,
     first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -75,7 +77,18 @@ class Database:
     def _init_schema(self) -> None:
         with self._get_conn() as conn:
             conn.executescript(SCHEMA)
+            self._migrate_schema(conn)
         logger.debug(f"Database initialized at {self.db_path}")
+
+    def _migrate_schema(self, conn: sqlite3.Connection) -> None:
+        """Add newly introduced columns for existing databases."""
+        cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(videos)").fetchall()
+        }
+        if "video_type" not in cols:
+            conn.execute("ALTER TABLE videos ADD COLUMN video_type TEXT")
+        if "thumbnail_url" not in cols:
+            conn.execute("ALTER TABLE videos ADD COLUMN thumbnail_url TEXT")
 
     # --- Creator operations ---
 
@@ -146,8 +159,18 @@ class Database:
                 cursor = conn.execute(
                     """
                     INSERT OR IGNORE INTO videos
-                        (creator_id, video_id, title, slug, url, price_regular, duration)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (
+                            creator_id,
+                            video_id,
+                            title,
+                            slug,
+                            url,
+                            video_type,
+                            thumbnail_url,
+                            price_regular,
+                            duration
+                        )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         creator_id,
@@ -155,6 +178,8 @@ class Database:
                         v["title"],
                         v["slug"],
                         v["url"],
+                        v.get("video_type"),
+                        v.get("thumbnail_url"),
                         v.get("price_regular"),
                         v.get("duration"),
                     ),
