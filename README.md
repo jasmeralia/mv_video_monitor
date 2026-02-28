@@ -70,7 +70,7 @@ scraping:
 
 ### `notifications`
 
-Set `type` to one of `"email"`, `"discord"`, or `"matrix"`. Only the section matching the active type needs to be fully configured.
+Set `type` to one of `"email"`, `"discord"`, or `"matrix"`. To enable multiple notification channels at once, pass a list instead — all listed channels will fire for every notification. Only the sections matching the active type(s) need to be fully configured.
 
 #### Email
 
@@ -96,6 +96,20 @@ notifications:
 ```yaml
 notifications:
   type: "discord"
+
+  discord:
+    webhook_url: "https://discord.com/api/webhooks/..."
+```
+
+#### Multiple channels
+
+```yaml
+notifications:
+  type: ["email", "discord"]
+
+  email:
+    smtp_host: "smtp.example.com"
+    # ... (full email config)
 
   discord:
     webhook_url: "https://discord.com/api/webhooks/..."

@@ -1,5 +1,7 @@
+import json
 import logging
 import smtplib
+import urllib.request
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
@@ -121,14 +123,52 @@ class EmailNotifier(BaseNotifier):
 
 
 class DiscordNotifier(BaseNotifier):
-    """Stub — implement when needed."""
-
     def __init__(self, config: dict):
-        self.webhook_url = config.get("webhook_url", "")
+        self.webhook_url = config["webhook_url"]
 
     def send_notification(self, creator_display_name: str, new_videos: list[dict]) -> bool:
-        logger.warning("Discord notifier not yet implemented")
-        return False
+        count = len(new_videos)
+        description_lines = []
+        for v in new_videos:
+            meta = []
+            if v.get("duration"):
+                meta.append(v["duration"])
+            if v.get("price_regular"):
+                meta.append(f"${v['price_regular']}")
+            else:
+                meta.append("Free")
+            meta_str = " | ".join(meta)
+            description_lines.append(f"**[{v['title']}]({v['url']})**\n{meta_str}")
+
+        payload = {
+            "embeds": [
+                {
+                    "title": f"{count} new video{'s' if count != 1 else ''} from {creator_display_name}",
+                    "color": 0xD63031,
+                    "description": "\n\n".join(description_lines),
+                    "footer": {
+                        "text": f"Detected: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+                    },
+                }
+            ]
+        }
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self.webhook_url,
+            data=data,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status not in (200, 204):
+                    logger.error(f"Discord webhook returned HTTP {resp.status}")
+                    return False
+            logger.info(f"Discord notification sent for {count} new videos from {creator_display_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send Discord notification for {creator_display_name}: {e}")
+            return False
 
 
 class MatrixNotifier(BaseNotifier):
@@ -144,13 +184,33 @@ class MatrixNotifier(BaseNotifier):
         return False
 
 
-def create_notifier(config: dict) -> BaseNotifier:
-    notif_type = config["notifications"]["type"]
+class MultiNotifier(BaseNotifier):
+    """Fan out to multiple notifiers; succeeds if all succeed."""
+
+    def __init__(self, notifiers: list[BaseNotifier]):
+        self.notifiers = notifiers
+
+    def send_notification(self, creator_display_name: str, new_videos: list[dict]) -> bool:
+        return all(n.send_notification(creator_display_name, new_videos) for n in self.notifiers)
+
+
+def _build_single_notifier(notif_type: str, notif_config: dict) -> BaseNotifier:
     if notif_type == "email":
-        return EmailNotifier(config["notifications"]["email"])
+        return EmailNotifier(notif_config["email"])
     elif notif_type == "discord":
-        return DiscordNotifier(config["notifications"].get("discord", {}))
+        return DiscordNotifier(notif_config["discord"])
     elif notif_type == "matrix":
-        return MatrixNotifier(config["notifications"].get("matrix", {}))
+        return MatrixNotifier(notif_config["matrix"])
     else:
         raise ValueError(f"Unknown notification type: {notif_type!r}")
+
+
+def create_notifier(config: dict) -> BaseNotifier:
+    notif_config = config["notifications"]
+    notif_type = notif_config["type"]
+
+    if isinstance(notif_type, list):
+        notifiers = [_build_single_notifier(t, notif_config) for t in notif_type]
+        return MultiNotifier(notifiers)
+
+    return _build_single_notifier(notif_type, notif_config)

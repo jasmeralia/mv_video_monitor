@@ -18,7 +18,9 @@ scraping:
   headless: true
 
 notifications:
-  type: "email"   # "email", "discord", or "matrix"
+  # Single type: "email", "discord", or "matrix"
+  # Multiple types: ["email", "discord"]
+  type: "email"
 
   email:
     smtp_host: "smtp.example.com"
