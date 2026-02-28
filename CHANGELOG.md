@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.2] - 2026-02-28
+
+### Added
+- Startup/container runtime debug diagnostics in logs:
+  - app version
+  - Python version/implementation/executable
+  - platform string
+  - Playwright package version
+- Browser startup diagnostics in logs:
+  - Chromium version from the launched Playwright browser
+  - active scraper user-agent
+
 ## [1.1.1] - 2026-02-28
 
 ### Changed
@@ -36,4 +48,3 @@ All notable changes to this project are documented in this file.
 - Docker Compose restart policy changed to `unless-stopped`.
 - Scraper now checks both regular and mobile verticals.
 - Notification payload now includes creator context for better links.
-

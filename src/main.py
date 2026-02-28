@@ -1,10 +1,12 @@
 import asyncio
+import platform
 import logging
 import os
 import random
 import sys
 import time
 from collections import defaultdict
+from importlib.metadata import PackageNotFoundError, version as package_version
 
 from .database import Database
 from .notifier import create_notifier
@@ -13,6 +15,24 @@ from .utils import load_config, setup_logging
 from .version import get_app_version
 
 logger = logging.getLogger(__name__)
+_RUNTIME_INFO_LOGGED = False
+
+
+def _safe_package_version(name: str) -> str:
+    try:
+        return package_version(name)
+    except PackageNotFoundError:
+        return "not-installed"
+
+
+def _log_runtime_debug_info() -> None:
+    logger.info("Runtime debug info:")
+    logger.info(f"  app_version={get_app_version()}")
+    logger.info(f"  python_version={platform.python_version()}")
+    logger.info(f"  python_implementation={platform.python_implementation()}")
+    logger.info(f"  python_executable={sys.executable}")
+    logger.info(f"  platform={platform.platform()}")
+    logger.info(f"  playwright_version={_safe_package_version('playwright')}")
 
 
 async def run_monitor(config_path: str, dry_run: bool = False) -> int:
@@ -27,8 +47,10 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
     """
     config = load_config(config_path)
     setup_logging(config)
-    app_version = get_app_version()
-    logger.info(f"ManyVids monitor version: {app_version}")
+    global _RUNTIME_INFO_LOGGED
+    if not _RUNTIME_INFO_LOGGED:
+        _log_runtime_debug_info()
+        _RUNTIME_INFO_LOGGED = True
 
     if dry_run:
         logger.info("=== DRY RUN MODE — no DB writes or notifications ===")

@@ -190,7 +190,11 @@ class ManyVidsScraper:
         await self._context.add_init_script(
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         )
-        logger.debug("Playwright browser context initialized")
+        logger.info(
+            "Playwright browser context initialized: "
+            f"chromium_version={self._browser.version}, "
+            f"user_agent={self.config['scraping']['user_agent']}"
+        )
         return self
 
     async def __aexit__(self, *args) -> None:
