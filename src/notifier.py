@@ -7,14 +7,15 @@ from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from html import escape
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class BaseNotifier(ABC):
     @abstractmethod
-    def send_notification(self, creator_display_name: str, new_videos: list[dict]) -> bool:
+    def send_notification(
+        self, creator_display_name: str, new_videos: list[dict]
+    ) -> bool:
         """Send notification for new videos. Returns True on success."""
         ...
 
@@ -30,7 +31,9 @@ class EmailNotifier(BaseNotifier):
         self.from_name = config.get("from_name", "ManyVids Monitor")
         self.to_addresses = config["to_addresses"]
 
-    def send_notification(self, creator_display_name: str, new_videos: list[dict]) -> bool:
+    def send_notification(
+        self, creator_display_name: str, new_videos: list[dict]
+    ) -> bool:
         count = len(new_videos)
         subject = (
             f"[ManyVids] {count} new video{'s' if count != 1 else ''} "
@@ -54,7 +57,9 @@ class EmailNotifier(BaseNotifier):
                     smtp.starttls()
                 smtp.login(self.smtp_user, self.smtp_password)
                 smtp.sendmail(self.from_address, self.to_addresses, msg.as_string())
-            logger.info(f"Email sent for {count} new videos from {creator_display_name}")
+            logger.info(
+                f"Email sent for {count} new videos from {creator_display_name}"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to send email for {creator_display_name}: {e}")
@@ -78,7 +83,9 @@ class EmailNotifier(BaseNotifier):
                 lines.append(f"    {' | '.join(meta)}")
             lines.append(f"    {v['url']}")
             lines.append("")
-        lines.append(f"Detected: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+        lines.append(
+            f"Detected: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+        )
         return "\n".join(lines)
 
     def _build_html_email(self, creator: str, videos: list[dict]) -> str:
@@ -97,9 +104,9 @@ class EmailNotifier(BaseNotifier):
             video_rows += f"""
             <tr>
               <td style="padding: 12px 8px; border-bottom: 1px solid #eee;">
-                <a href="{escape(v['url'])}"
+                <a href="{escape(v["url"])}"
                    style="font-size: 15px; color: #d63031; text-decoration: none; font-weight: bold;">
-                  {escape(v['title'])}
+                  {escape(v["title"])}
                 </a><br>
                 <span style="color: #636e72; font-size: 13px;">{meta_html}</span>
               </td>
@@ -110,7 +117,7 @@ class EmailNotifier(BaseNotifier):
 <html>
 <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <h2 style="color: #2d3436; margin-bottom: 4px;">
-    {count} New Video{'s' if count != 1 else ''} from {escape(creator)}
+    {count} New Video{"s" if count != 1 else ""} from {escape(creator)}
   </h2>
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 16px;">
     {video_rows}
@@ -126,7 +133,9 @@ class DiscordNotifier(BaseNotifier):
     def __init__(self, config: dict):
         self.webhook_url = config["webhook_url"]
 
-    def send_notification(self, creator_display_name: str, new_videos: list[dict]) -> bool:
+    def send_notification(
+        self, creator_display_name: str, new_videos: list[dict]
+    ) -> bool:
         count = len(new_videos)
         description_lines = []
         for v in new_videos:
@@ -164,10 +173,14 @@ class DiscordNotifier(BaseNotifier):
                 if resp.status not in (200, 204):
                     logger.error(f"Discord webhook returned HTTP {resp.status}")
                     return False
-            logger.info(f"Discord notification sent for {count} new videos from {creator_display_name}")
+            logger.info(
+                f"Discord notification sent for {count} new videos from {creator_display_name}"
+            )
             return True
         except Exception as e:
-            logger.error(f"Failed to send Discord notification for {creator_display_name}: {e}")
+            logger.error(
+                f"Failed to send Discord notification for {creator_display_name}: {e}"
+            )
             return False
 
 
@@ -179,7 +192,9 @@ class MatrixNotifier(BaseNotifier):
         self.room_id = config.get("room_id", "")
         self.access_token = config.get("access_token", "")
 
-    def send_notification(self, creator_display_name: str, new_videos: list[dict]) -> bool:
+    def send_notification(
+        self, creator_display_name: str, new_videos: list[dict]
+    ) -> bool:
         logger.warning("Matrix notifier not yet implemented")
         return False
 
@@ -190,8 +205,13 @@ class MultiNotifier(BaseNotifier):
     def __init__(self, notifiers: list[BaseNotifier]):
         self.notifiers = notifiers
 
-    def send_notification(self, creator_display_name: str, new_videos: list[dict]) -> bool:
-        return all(n.send_notification(creator_display_name, new_videos) for n in self.notifiers)
+    def send_notification(
+        self, creator_display_name: str, new_videos: list[dict]
+    ) -> bool:
+        return all(
+            n.send_notification(creator_display_name, new_videos)
+            for n in self.notifiers
+        )
 
 
 def _build_single_notifier(notif_type: str, notif_config: dict) -> BaseNotifier:

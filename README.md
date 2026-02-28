@@ -1,6 +1,6 @@
 # ManyVids Video Monitor
 
-Monitors ManyVids creator pages for new video uploads and sends notifications when new content is detected. Runs as a Docker container on a cron schedule.
+Monitors ManyVids creator pages for new video uploads and sends notifications when new content is detected. Runs as a Docker container with an internal daily polling loop.
 
 ## Features
 
@@ -184,15 +184,14 @@ docker compose run --rm -e DRY_RUN=1 monitor
 
 ## Scheduling
 
-The container runs the monitor once and exits. Schedule it with cron or a container orchestrator.
+The container starts one polling cycle immediately, then sleeps until the next cycle.
 
-**Cron example** (run daily at 08:00):
+Defaults:
+- `POLL_INTERVAL_SECONDS=86400` (24 hours)
+- `POLL_JITTER_SECONDS=1800` (+/- 30 minutes)
 
-```cron
-0 8 * * * docker compose -f /path/to/docker-compose.yml run --rm monitor
-```
-
-**TrueNAS SCALE**: Add the container via the Apps UI with the same volume mounts, then create a cron job in System > Advanced > Cron Jobs pointing at the `docker compose run` command.
+Optional:
+- `RUN_ONCE=1` to run a single cycle and exit (useful for testing/manual runs)
 
 ---
 

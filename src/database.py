@@ -219,5 +219,13 @@ class Database:
                     notes = ?
                 WHERE id = ?
                 """,
-                (_now(), creators_checked, new_videos, notifications_sent, status, notes, run_id),
+                (
+                    _now(),
+                    creators_checked,
+                    new_videos,
+                    notifications_sent,
+                    status,
+                    notes,
+                    run_id,
+                ),
             )

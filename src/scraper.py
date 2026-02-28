@@ -6,13 +6,14 @@ import random
 import re
 from dataclasses import dataclass
 from typing import Optional
-from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
+from urllib.parse import urlencode
 
 from playwright.async_api import (
     async_playwright,
     Browser,
     BrowserContext,
     Page,
+    Playwright,
     TimeoutError as PlaywrightTimeout,
 )
 
@@ -27,11 +28,11 @@ _RSC_PATTERN = re.compile(r'self\.__next_f\.push\(\[1,"(.*?)"\]\)', re.DOTALL)
 # Anchored to {"id":"...","title":"..."} so we match video objects specifically
 # (not the creator URL object which has "id" followed by "slug"/"mainSection").
 _VIDEO_PATTERN = re.compile(
-    r'\{"id":"(\d+)"'         # group 1: numeric video ID (at start of object)
-    r',"title":"(.*?)"'       # group 2: title (HTML-encoded, immediately follows id)
-    r'.*?"slug":"([^"]+)"'    # group 3: URL slug
-    r'.*?"regular":"([^"]*)"' # group 4: regular price (may be empty string)
-    r'.*?"duration":"([^"]*)"', # group 5: duration string (e.g. "02:13")
+    r'\{"id":"(\d+)"'  # group 1: numeric video ID (at start of object)
+    r',"title":"(.*?)"'  # group 2: title (HTML-encoded, immediately follows id)
+    r'.*?"slug":"([^"]+)"'  # group 3: URL slug
+    r'.*?"regular":"([^"]*)"'  # group 4: regular price (may be empty string)
+    r'.*?"duration":"([^"]*)"',  # group 5: duration string (e.g. "02:13")
     re.DOTALL,
 )
 
@@ -151,12 +152,13 @@ def _extract_rsc_video_data(html_content: str) -> tuple[list[VideoData], int]:
 class ManyVidsScraper:
     def __init__(self, config: dict):
         self.config = config
-        self._playwright = None
+        self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
 
     async def __aenter__(self) -> "ManyVidsScraper":
         self._playwright = await async_playwright().start()
+        assert self._playwright is not None
         self._browser = await self._playwright.chromium.launch(
             headless=self.config["scraping"].get("headless", True),
             args=[
@@ -205,7 +207,11 @@ class ManyVidsScraper:
 
         title = await page.title()
         title_lower = title.lower()
-        if "access denied" in title_lower or "forbidden" in title_lower or "blocked" in title_lower:
+        if (
+            "access denied" in title_lower
+            or "forbidden" in title_lower
+            or "blocked" in title_lower
+        ):
             raise ScraperBlockedError(f"WAF block detected: page title={title!r}")
 
         # Wait for the RSC video payload script to be present in the DOM
@@ -235,6 +241,8 @@ class ManyVidsScraper:
         creator_name: str,
         known_video_ids: set[str],
     ) -> CreatorResult:
+        if self._context is None:
+            raise ScraperError("Browser context is not initialized")
         page = await self._context.new_page()
         all_videos: list[VideoData] = []
         total_pages = 1
@@ -252,7 +260,9 @@ class ManyVidsScraper:
                     await asyncio.sleep(delay)
 
                 url = _build_page_url(creator_id, creator_name, page_num)
-                logger.debug(f"Creator {creator_name}: fetching page {page_num} — {url}")
+                logger.debug(
+                    f"Creator {creator_name}: fetching page {page_num} — {url}"
+                )
 
                 html_content = await self._load_page(page, url)
                 page_videos, total_pages = _extract_rsc_video_data(html_content)
@@ -313,13 +323,19 @@ class ManyVidsScraper:
         last_error: Optional[Exception] = None
         for attempt in range(max_retries + 1):
             try:
-                return await self._scrape_creator(creator_id, creator_name, known_video_ids)
+                return await self._scrape_creator(
+                    creator_id, creator_name, known_video_ids
+                )
             except ScraperBlockedError as e:
                 last_error = e
-                logger.warning(f"Creator {creator_name}: WAF block on attempt {attempt + 1}: {e}")
+                logger.warning(
+                    f"Creator {creator_name}: WAF block on attempt {attempt + 1}: {e}"
+                )
             except ScraperError as e:
                 last_error = e
-                logger.error(f"Creator {creator_name}: scrape error on attempt {attempt + 1}: {e}")
+                logger.error(
+                    f"Creator {creator_name}: scrape error on attempt {attempt + 1}: {e}"
+                )
             except Exception as e:
                 last_error = e
                 logger.exception(
@@ -327,7 +343,7 @@ class ManyVidsScraper:
                 )
 
             if attempt < max_retries:
-                wait = backoff_base * (2 ** attempt) + random.uniform(0, 5)
+                wait = backoff_base * (2**attempt) + random.uniform(0, 5)
                 logger.info(f"Creator {creator_name}: retrying in {wait:.0f}s")
                 await asyncio.sleep(wait)
 

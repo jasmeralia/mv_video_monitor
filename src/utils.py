@@ -24,6 +24,10 @@ def setup_logging(config: dict) -> None:
     stream_handler.setFormatter(fmt)
 
     root = logging.getLogger()
+    # Reconfigure cleanly when multiple monitor cycles run in one process.
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+        handler.close()
     root.setLevel(level)
     root.addHandler(file_handler)
     root.addHandler(stream_handler)

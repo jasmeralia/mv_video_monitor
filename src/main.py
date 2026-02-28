@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import sys
+import time
 from collections import defaultdict
 
 from .database import Database
@@ -50,12 +51,16 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
     if not dry_run:
         unnotified = db.get_unnotified_videos()
         if unnotified:
-            logger.info(f"Retrying notifications for {len(unnotified)} previously un-notified videos")
+            logger.info(
+                f"Retrying notifications for {len(unnotified)} previously un-notified videos"
+            )
             by_creator: dict[str, list[dict]] = defaultdict(list)
             for v in unnotified:
                 by_creator[v["creator_id"]].append(v)
             for creator_id, videos in by_creator.items():
-                display_name = videos[0].get("display_name") or videos[0]["creator_name"]
+                display_name = (
+                    videos[0].get("display_name") or videos[0]["creator_name"]
+                )
                 success = notifier.send_notification(display_name, videos)
                 if success:
                     db.mark_videos_notified([v["video_id"] for v in videos])
@@ -76,7 +81,9 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
             )
 
             known_ids = db.get_known_video_ids(creator_id) if not dry_run else set()
-            result = await scraper.scrape_creator_with_retry(creator_id, creator_name, known_ids)
+            result = await scraper.scrape_creator_with_retry(
+                creator_id, creator_name, known_ids
+            )
 
             if result.error:
                 logger.error(f"Creator {creator_name}: FAILED — {result.error}")
@@ -165,9 +172,28 @@ async def _inter_creator_delay(config: dict) -> None:
 
 def main() -> None:
     config_path = os.environ.get("CONFIG_PATH", "/config/config.yaml")
-    dry_run = "--dry-run" in sys.argv or os.environ.get("DRY_RUN", "").lower() in ("1", "true")
-    exit_code = asyncio.run(run_monitor(config_path, dry_run=dry_run))
-    sys.exit(exit_code)
+    dry_run = "--dry-run" in sys.argv or os.environ.get("DRY_RUN", "").lower() in (
+        "1",
+        "true",
+    )
+    run_once = os.environ.get("RUN_ONCE", "").lower() in ("1", "true")
+    poll_interval = int(os.environ.get("POLL_INTERVAL_SECONDS", "86400"))
+    poll_jitter = int(os.environ.get("POLL_JITTER_SECONDS", "1800"))
+
+    if run_once:
+        exit_code = asyncio.run(run_monitor(config_path, dry_run=dry_run))
+        sys.exit(exit_code)
+
+    while True:
+        exit_code = asyncio.run(run_monitor(config_path, dry_run=dry_run))
+        min_sleep = max(0, poll_interval - poll_jitter)
+        max_sleep = poll_interval + poll_jitter
+        delay = random.uniform(min_sleep, max_sleep)
+        logger.info(
+            f"Polling cycle complete (exit={exit_code}). Sleeping {delay:.0f}s "
+            f"(range {min_sleep}-{max_sleep}s) before next cycle."
+        )
+        time.sleep(delay)
 
 
 if __name__ == "__main__":

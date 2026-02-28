@@ -19,5 +19,5 @@ services:
       # Set to "1" or "true" to scrape without writing to the DB or sending notifications
       # DRY_RUN: "1"
 
-    # The container exits after one run. Remove it automatically when done.
-    restart: "no"
+    # Keep the container running under normal Docker lifecycle controls
+    restart: unless-stopped
