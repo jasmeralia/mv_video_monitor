@@ -1,6 +1,7 @@
 import json
 import logging
 import smtplib
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -218,12 +219,54 @@ class DiscordNotifier(BaseNotifier):
     def __init__(self, config: dict):
         self.webhook_url = config["webhook_url"]
 
+    def _post_json_payload(self, payload: dict) -> bool:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self.webhook_url,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Accept-Language": "en-US,en;q=0.9",
+                "User-Agent": DISCORD_WEBHOOK_UA,
+            },
+        )
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    return resp.status in (200, 204)
+            except urllib.error.HTTPError as e:
+                try:
+                    err_body = e.read().decode("utf-8", errors="replace")
+                except Exception:
+                    err_body = "<unable to read response body>"
+                if e.code == 429 and attempt < 2:
+                    retry_after = 1.0
+                    try:
+                        parsed = json.loads(err_body)
+                        retry_after = float(parsed.get("retry_after", 1))
+                    except Exception:
+                        retry_after = 1.0
+                    logger.warning(
+                        f"Discord webhook rate-limited (429), retrying in {retry_after:.2f}s"
+                    )
+                    time.sleep(max(0.1, retry_after))
+                    continue
+                logger.error(
+                    f"Discord webhook HTTP failure: {e.code} {e.reason}; response={err_body}"
+                )
+                return False
+            except Exception as e:
+                logger.error(f"Discord webhook request failed: {e}")
+                return False
+        return False
+
     def send_notification(
         self, creator_display_name: str, new_videos: list[dict]
     ) -> bool:
         count = len(new_videos)
-        embeds = []
-        for v in new_videos[:10]:
+        sent = 0
+        for i, v in enumerate(new_videos, start=1):
             meta = []
             meta.append(_section_label(v))
             if v.get("duration"):
@@ -247,54 +290,27 @@ class DiscordNotifier(BaseNotifier):
             thumb = _discord_thumbnail_url(v)
             if thumb:
                 embed["image"] = {"url": thumb}
-            embeds.append(embed)
 
-        content = (
-            f"{count} new video{'s' if count != 1 else ''} from {creator_display_name}"
+            payload = {
+                "content": (
+                    f"New video {i}/{count} from {creator_display_name}"
+                    if count > 1
+                    else f"New video from {creator_display_name}"
+                ),
+                "embeds": [embed],
+            }
+            if not self._post_json_payload(payload):
+                logger.error(
+                    f"Failed to send Discord notification for {creator_display_name} "
+                    f"video_id={v.get('video_id')}"
+                )
+                return False
+            sent += 1
+
+        logger.info(
+            f"Discord notification sent for {sent} new videos from {creator_display_name}"
         )
-        if count > 10:
-            content += f" (showing first 10 of {count})"
-
-        payload = {
-            "content": content,
-            "embeds": embeds,
-        }
-
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            self.webhook_url,
-            data=data,
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "Accept-Language": "en-US,en;q=0.9",
-                "User-Agent": DISCORD_WEBHOOK_UA,
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                if resp.status not in (200, 204):
-                    logger.error(f"Discord webhook returned HTTP {resp.status}")
-                    return False
-            logger.info(
-                f"Discord notification sent for {count} new videos from {creator_display_name}"
-            )
-            return True
-        except urllib.error.HTTPError as e:
-            try:
-                err_body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                err_body = "<unable to read response body>"
-            logger.error(
-                f"Discord webhook failed for {creator_display_name}: "
-                f"HTTP {e.code} {e.reason}; response={err_body}"
-            )
-            return False
-        except Exception as e:
-            logger.error(
-                f"Failed to send Discord notification for {creator_display_name}: {e}"
-            )
-            return False
+        return True
 
 
 class MatrixNotifier(BaseNotifier):

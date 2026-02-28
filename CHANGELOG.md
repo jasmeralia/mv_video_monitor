@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.5] - 2026-02-28
+
+### Changed
+- Discord notifications now send one webhook call per discovered video
+  instead of batching many videos into one request.
+- Added Discord 429 rate-limit retry handling (uses `retry_after` when present).
+- This reduces message breakage risk on large discovery runs.
+
 ## [1.1.4] - 2026-02-28
 
 ### Changed
