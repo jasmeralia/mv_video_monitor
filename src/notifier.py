@@ -53,6 +53,11 @@ def _email_thumbnail_url(video: dict) -> str | None:
     return f"https://img.manyvids.com/o/v1/{encoded}?w=600&q=80"
 
 
+def _discord_thumbnail_url(video: dict) -> str | None:
+    # Reuse normalized image URL to maximize hotlink success for Discord.
+    return _email_thumbnail_url(video)
+
+
 class BaseNotifier(ABC):
     @abstractmethod
     def send_notification(
@@ -217,8 +222,8 @@ class DiscordNotifier(BaseNotifier):
         self, creator_display_name: str, new_videos: list[dict]
     ) -> bool:
         count = len(new_videos)
-        description_lines = []
-        for v in new_videos:
+        embeds = []
+        for v in new_videos[:10]:
             meta = []
             meta.append(_section_label(v))
             if v.get("duration"):
@@ -228,23 +233,31 @@ class DiscordNotifier(BaseNotifier):
             else:
                 meta.append("Free")
             meta_str = " | ".join(meta)
-            description_lines.append(f"**[{v['title']}]({v['url']})**\n{meta_str}")
+            embed: dict[str, object] = {
+                "title": f"[{_section_label(v)}] {v['title']}",
+                "url": v["url"],
+                "color": 0xD63031,
+                "description": meta_str,
+                "footer": {
+                    "text": (
+                        f"Detected: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+                    )
+                },
+            }
+            thumb = _discord_thumbnail_url(v)
+            if thumb:
+                embed["image"] = {"url": thumb}
+            embeds.append(embed)
 
-        description = "\n\n".join(description_lines)
-        if len(description) > 3800:
-            description = description[:3797] + "..."
+        content = (
+            f"{count} new video{'s' if count != 1 else ''} from {creator_display_name}"
+        )
+        if count > 10:
+            content += f" (showing first 10 of {count})"
 
         payload = {
-            "embeds": [
-                {
-                    "title": f"{count} new video{'s' if count != 1 else ''} from {creator_display_name}",
-                    "color": 0xD63031,
-                    "description": description,
-                    "footer": {
-                        "text": f"Detected: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
-                    },
-                }
-            ]
+            "content": content,
+            "embeds": embeds,
         }
 
         data = json.dumps(payload).encode("utf-8")

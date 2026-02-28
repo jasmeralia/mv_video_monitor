@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.3] - 2026-02-28
+
+### Fixed
+- Mobile video classification now uses rendered DOM section metadata:
+  - Videos shown in `VerticalVideosSection` are labeled `Mobile`.
+  - Resolves misclassification of entries like `Time to worship my feet, boy`.
+- Thumbnail enrichment now uses DOM card image URLs as fallback/override, improving
+  thumbnail availability in notifications.
+- Discord notifications now include per-video embeds with:
+  - explicit `Regular` / `Mobile` in embed title
+  - per-video thumbnail image when available
+  - direct video URL on each embed
+
 ## [1.1.2] - 2026-02-28
 
 ### Added

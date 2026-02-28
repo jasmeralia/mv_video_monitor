@@ -41,6 +41,14 @@ _VIDEO_PATTERN = re.compile(
 # Regex to find total pages from RSC pagination metadata
 _TOTAL_PAGES_PATTERN = re.compile(r'"totalPages":(\d+)')
 
+# DOM cards include aria-label and an <img> src even when RSC metadata is incomplete.
+_CARD_PATTERN = re.compile(
+    r"(?P<section>VerticalVideosSection|HorizontalVideosSection)[\s\S]{0,2000}?"
+    r'aria-label="(?P<title>[^"]+?) by [^"]+ on ManyVids\."[\s\S]{0,2000}?'
+    r'<img [^>]*?src="(?P<img>[^"]+)"',
+    re.DOTALL,
+)
+
 
 @dataclass
 class VideoData:
@@ -153,6 +161,7 @@ def _extract_rsc_video_data(html_content: str) -> tuple[list[VideoData], int]:
                 )
             )
 
+        _enrich_videos_from_dom(html_content, videos)
         logger.debug(
             f"RSC extraction: {len(videos)} unique videos, {total_pages} total pages"
         )
@@ -160,6 +169,34 @@ def _extract_rsc_video_data(html_content: str) -> tuple[list[VideoData], int]:
 
     logger.warning("RSC video payload not found in page HTML")
     return [], 1
+
+
+def _enrich_videos_from_dom(html_content: str, videos: list[VideoData]) -> None:
+    """
+    Enrich video metadata from rendered DOM cards.
+
+    The current ManyVids RSC payload may report "type":"regular" even for cards
+    rendered inside VerticalVideosSection. We trust DOM section class for mobile
+    classification and use DOM image URLs as thumbnail fallback.
+    """
+    title_meta: dict[str, tuple[str, str]] = {}
+    for m in _CARD_PATTERN.finditer(html_content):
+        section = m.group("section")
+        title = html_module.unescape(m.group("title")).strip()
+        img_url = html_module.unescape(m.group("img")).strip()
+        if not title:
+            continue
+        video_type = "mobile" if section == "VerticalVideosSection" else "regular"
+        title_meta[title] = (video_type, img_url)
+
+    for v in videos:
+        meta = title_meta.get(v.title.strip())
+        if not meta:
+            continue
+        dom_type, dom_thumb = meta
+        v.video_type = dom_type
+        if dom_thumb:
+            v.thumbnail_url = dom_thumb
 
 
 class ManyVidsScraper:
@@ -303,11 +340,6 @@ class ManyVidsScraper:
                             f"page {page_num}, stopping this section"
                         )
                         break
-
-                    for v in page_videos:
-                        # Force section label from source page so notifications can
-                        # consistently distinguish regular vs mobile listings.
-                        v.video_type = section_name
 
                     all_videos.extend(page_videos)
 
