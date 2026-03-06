@@ -264,9 +264,8 @@ class DiscordNotifier(BaseNotifier):
     def send_notification(
         self, creator_display_name: str, new_videos: list[dict]
     ) -> bool:
-        count = len(new_videos)
         sent = 0
-        for i, v in enumerate(new_videos, start=1):
+        for v in new_videos:
             meta = []
             meta.append(_section_label(v))
             if v.get("duration"):
@@ -291,12 +290,7 @@ class DiscordNotifier(BaseNotifier):
             if thumb:
                 embed["image"] = {"url": thumb}
 
-            payload = {
-                "content": (
-                    f"New video {i}/{count} from {creator_display_name}"
-                    if count > 1
-                    else f"New video from {creator_display_name}"
-                ),
+            payload: dict[str, object] = {
                 "embeds": [embed],
             }
             if not self._post_json_payload(payload):

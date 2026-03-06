@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.6] - 2026-03-06
+
+### Changed
+- Discord notifications no longer include a plaintext `content` message;
+  only the rich embed is sent, eliminating the duplicate plain-text line.
+
 ## [1.1.5] - 2026-02-28
 
 ### Changed
