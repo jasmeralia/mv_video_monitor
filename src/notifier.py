@@ -6,6 +6,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
+
+import requests
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -261,6 +263,55 @@ class DiscordNotifier(BaseNotifier):
                 return False
         return False
 
+    def _download_thumbnail(self, url: str) -> bytes | None:
+        try:
+            resp = requests.get(
+                url,
+                timeout=5,
+                headers={"User-Agent": DISCORD_WEBHOOK_UA},
+            )
+            resp.raise_for_status()
+            return resp.content
+        except Exception as e:
+            logger.warning(f"Failed to download thumbnail for Discord embed: {e}")
+            return None
+
+    def _post_multipart_payload(self, payload: dict, image_bytes: bytes) -> bool:
+        for attempt in range(3):
+            try:
+                resp = requests.post(
+                    self.webhook_url,
+                    data={"payload_json": json.dumps(payload)},
+                    files={"files[0]": ("thumbnail.jpg", image_bytes, "image/jpeg")},
+                    headers={
+                        "Accept": "application/json",
+                        "User-Agent": DISCORD_WEBHOOK_UA,
+                    },
+                    timeout=10,
+                )
+                if resp.status_code == 429 and attempt < 2:
+                    retry_after = 1.0
+                    try:
+                        retry_after = float(resp.json().get("retry_after", 1))
+                    except Exception:
+                        retry_after = 1.0
+                    logger.warning(
+                        f"Discord webhook rate-limited (429), retrying in {retry_after:.2f}s"
+                    )
+                    time.sleep(max(0.1, retry_after))
+                    continue
+                if resp.status_code not in (200, 204):
+                    logger.error(
+                        f"Discord webhook HTTP failure: {resp.status_code}; "
+                        f"response={resp.text}"
+                    )
+                    return False
+                return True
+            except Exception as e:
+                logger.error(f"Discord webhook multipart request failed: {e}")
+                return False
+        return False
+
     def send_notification(
         self, creator_display_name: str, new_videos: list[dict]
     ) -> bool:
@@ -286,14 +337,22 @@ class DiscordNotifier(BaseNotifier):
                     )
                 },
             }
-            thumb = _discord_thumbnail_url(v)
-            if thumb:
-                embed["image"] = {"url": thumb}
+            image_bytes: bytes | None = None
+            thumb_url = _discord_thumbnail_url(v)
+            if thumb_url:
+                image_bytes = self._download_thumbnail(thumb_url)
+                if image_bytes:
+                    embed["image"] = {"url": "attachment://thumbnail.jpg"}
 
             payload: dict[str, object] = {
                 "embeds": [embed],
             }
-            if not self._post_json_payload(payload):
+            success = (
+                self._post_multipart_payload(payload, image_bytes)
+                if image_bytes
+                else self._post_json_payload(payload)
+            )
+            if not success:
                 logger.error(
                     f"Failed to send Discord notification for {creator_display_name} "
                     f"video_id={v.get('video_id')}"

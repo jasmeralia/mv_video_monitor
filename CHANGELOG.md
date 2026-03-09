@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.7] - 2026-03-09
+
+### Fixed
+- Discord embed thumbnails now delivered as multipart file attachments instead
+  of hotlinked URLs. The ManyVids image proxy rejects unauthenticated requests
+  from Discord's embed fetcher, causing the entire embed to be silently dropped.
+  The notifier now downloads the thumbnail locally (5 s timeout, graceful
+  fallback to no image on failure) and attaches it as `files[0]` in a
+  `multipart/form-data` POST with `"url": "attachment://thumbnail.jpg"`.
+- Added `requests` library dependency to support multipart POST encoding.
+
 ## [1.1.6] - 2026-03-06
 
 ### Changed
