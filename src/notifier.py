@@ -62,6 +62,12 @@ def _discord_thumbnail_url(video: dict) -> str | None:
 
 
 class BaseNotifier(ABC):
+    @property
+    @abstractmethod
+    def channel_name(self) -> str:
+        """Identifier for this notification channel (e.g. 'email', 'discord')."""
+        ...
+
     @abstractmethod
     def send_notification(
         self, creator_display_name: str, new_videos: list[dict]
@@ -71,6 +77,10 @@ class BaseNotifier(ABC):
 
 
 class EmailNotifier(BaseNotifier):
+    @property
+    def channel_name(self) -> str:
+        return "email"
+
     def __init__(self, config: dict):
         self.smtp_host = config["smtp_host"]
         self.smtp_port = config["smtp_port"]
@@ -218,6 +228,10 @@ class EmailNotifier(BaseNotifier):
 
 
 class DiscordNotifier(BaseNotifier):
+    @property
+    def channel_name(self) -> str:
+        return "discord"
+
     def __init__(self, config: dict):
         self.webhook_url = config["webhook_url"]
 
@@ -369,6 +383,10 @@ class DiscordNotifier(BaseNotifier):
 class MatrixNotifier(BaseNotifier):
     """Stub — implement when needed."""
 
+    @property
+    def channel_name(self) -> str:
+        return "matrix"
+
     def __init__(self, config: dict):
         self.homeserver = config.get("homeserver", "")
         self.room_id = config.get("room_id", "")
@@ -379,21 +397,6 @@ class MatrixNotifier(BaseNotifier):
     ) -> bool:
         logger.warning("Matrix notifier not yet implemented")
         return False
-
-
-class MultiNotifier(BaseNotifier):
-    """Fan out to multiple notifiers; succeeds if all succeed."""
-
-    def __init__(self, notifiers: list[BaseNotifier]):
-        self.notifiers = notifiers
-
-    def send_notification(
-        self, creator_display_name: str, new_videos: list[dict]
-    ) -> bool:
-        return all(
-            n.send_notification(creator_display_name, new_videos)
-            for n in self.notifiers
-        )
 
 
 def _build_single_notifier(notif_type: str, notif_config: dict) -> BaseNotifier:
@@ -407,12 +410,10 @@ def _build_single_notifier(notif_type: str, notif_config: dict) -> BaseNotifier:
         raise ValueError(f"Unknown notification type: {notif_type!r}")
 
 
-def create_notifier(config: dict) -> BaseNotifier:
+def create_notifiers(config: dict) -> list[BaseNotifier]:
     notif_config = config["notifications"]
     notif_type = notif_config["type"]
 
     if isinstance(notif_type, list):
-        notifiers = [_build_single_notifier(t, notif_config) for t in notif_type]
-        return MultiNotifier(notifiers)
-
-    return _build_single_notifier(notif_type, notif_config)
+        return [_build_single_notifier(t, notif_config) for t in notif_type]
+    return [_build_single_notifier(notif_type, notif_config)]

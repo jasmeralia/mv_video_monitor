@@ -9,7 +9,7 @@ from collections import defaultdict
 from importlib.metadata import PackageNotFoundError, version as package_version
 
 from .database import Database
-from .notifier import create_notifier
+from .notifier import BaseNotifier, create_notifiers
 from .scraper import ManyVidsScraper
 from .utils import load_config, setup_logging
 from .version import get_app_version
@@ -35,6 +35,62 @@ def _log_runtime_debug_info() -> None:
     logger.info(f"  playwright_version={_safe_package_version('playwright')}")
 
 
+async def _send_channel_notifications(
+    creator_display_name: str,
+    videos: list[dict],
+    notifiers: list[BaseNotifier],
+    db: Database,
+    discord_delay: float,
+    last_discord_at: list[float],
+) -> int:
+    """
+    Send pending notifications per channel for a set of videos.
+
+    Each video dict must contain a 'missing_channels' key listing the channels
+    that still need notification. For new videos (not from the retry path),
+    callers should set missing_channels to the full list of active channels.
+
+    Discord is sent one video at a time with a configurable delay between calls.
+    Email (and other channels) are sent as a batch per creator.
+
+    Returns the number of successful individual notification sends.
+    """
+    sent = 0
+    for notifier in notifiers:
+        channel = notifier.channel_name
+        pending = [v for v in videos if channel in v.get("missing_channels", [])]
+        if not pending:
+            continue
+
+        if channel == "discord":
+            for v in pending:
+                elapsed = time.monotonic() - last_discord_at[0]
+                if elapsed < discord_delay:
+                    await asyncio.sleep(discord_delay - elapsed)
+                ok = notifier.send_notification(creator_display_name, [v])
+                last_discord_at[0] = time.monotonic()
+                if ok:
+                    db.mark_video_notified(v["video_id"], channel)
+                    sent += 1
+                else:
+                    logger.error(
+                        f"Discord notification failed for "
+                        f"{creator_display_name} video_id={v.get('video_id')}"
+                    )
+        else:
+            ok = notifier.send_notification(creator_display_name, pending)
+            if ok:
+                for v in pending:
+                    db.mark_video_notified(v["video_id"], channel)
+                sent += 1
+            else:
+                logger.error(
+                    f"{channel} notification failed for {creator_display_name}"
+                )
+
+    return sent
+
+
 async def run_monitor(config_path: str, dry_run: bool = False) -> int:
     """
     Main orchestration loop.
@@ -56,7 +112,13 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
         logger.info("=== DRY RUN MODE — no DB writes or notifications ===")
 
     db = Database(config["database"]["path"])
-    notifier = create_notifier(config)
+    notifiers = create_notifiers(config)
+    active_channels = [n.channel_name for n in notifiers]
+    discord_delay = (
+        config.get("notifications", {})
+        .get("discord", {})
+        .get("delay_between_notifications", 10.0)
+    )
 
     # Sync creators from config into the database
     for c in config["creators"]:
@@ -72,12 +134,15 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
     notifications_sent = 0
     failed_creators: list[str] = []
 
-    # Step 1: Retry any previously un-notified videos (failed notification from last run)
+    # Tracks the monotonic time of the last Discord send, shared across all loops.
+    last_discord_at: list[float] = [0.0]
+
+    # Step 1: Retry any previously un-notified videos
     if not dry_run:
-        unnotified = db.get_unnotified_videos()
+        unnotified = db.get_unnotified_videos(active_channels)
         if unnotified:
             logger.info(
-                f"Retrying notifications for {len(unnotified)} previously un-notified videos"
+                f"Retrying notifications for {len(unnotified)} previously un-notified video(s)"
             )
             by_creator: dict[str, list[dict]] = defaultdict(list)
             for v in unnotified:
@@ -86,10 +151,10 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
                 display_name = (
                     videos[0].get("display_name") or videos[0]["creator_name"]
                 )
-                success = notifier.send_notification(display_name, videos)
-                if success:
-                    db.mark_videos_notified([v["video_id"] for v in videos])
-                    notifications_sent += 1
+                sent = await _send_channel_notifications(
+                    display_name, videos, notifiers, db, discord_delay, last_discord_at
+                )
+                notifications_sent += sent
 
     # Step 2: Scrape all creators
     creators = db.get_all_creators()
@@ -105,9 +170,9 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
                 f"[{i + 1}/{len(creators)}] Checking creator: {creator_name} (id={creator_id})"
             )
 
-            known_ids = db.get_known_video_ids(creator_id) if not dry_run else set()
+            known_titles = db.get_known_titles(creator_id) if not dry_run else set()
             result = await scraper.scrape_creator_with_retry(
-                creator_id, creator_name, known_ids
+                creator_id, creator_name, known_titles
             )
 
             if result.error:
@@ -115,7 +180,6 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
                 if not dry_run:
                     db.update_creator_check(creator_id, "error")
                 failed_creators.append(creator_name)
-                # Delay before next creator even on failure
                 if i < len(creators) - 1:
                     await _inter_creator_delay(config)
                 continue
@@ -148,15 +212,18 @@ async def run_monitor(config_path: str, dry_run: bool = False) -> int:
                 )
 
                 if new_videos:
-                    success = notifier.send_notification(display_name, new_videos)
-                    if success:
-                        db.mark_videos_notified([v["video_id"] for v in new_videos])
-                        notifications_sent += 1
-                    else:
-                        logger.error(
-                            f"Creator {creator_name}: notification failed — "
-                            "will retry next run"
-                        )
+                    # Mark all active channels as pending for each new video
+                    for v in new_videos:
+                        v["missing_channels"] = active_channels
+                    sent = await _send_channel_notifications(
+                        display_name,
+                        new_videos,
+                        notifiers,
+                        db,
+                        discord_delay,
+                        last_discord_at,
+                    )
+                    notifications_sent += sent
 
             if i < len(creators) - 1:
                 await _inter_creator_delay(config)

@@ -293,7 +293,7 @@ class ManyVidsScraper:
         self,
         creator_id: str,
         creator_name: str,
-        known_video_ids: set[str],
+        known_titles: set[str],
     ) -> CreatorResult:
         if self._context is None:
             raise ScraperError("Browser context is not initialized")
@@ -343,10 +343,10 @@ class ManyVidsScraper:
 
                     all_videos.extend(page_videos)
 
-                    # Early stop: if every video on this page is already known,
+                    # Early stop: if every title on this page is already known,
                     # all subsequent (older) pages will also be known
-                    page_ids = {v.video_id for v in page_videos}
-                    if page_ids.issubset(known_video_ids):
+                    page_titles = {v.title for v in page_videos}
+                    if page_titles.issubset(known_titles):
                         logger.info(
                             f"Creator {creator_name}: all {section_name} videos on "
                             f"page {page_num} already known, stopping "
@@ -385,7 +385,7 @@ class ManyVidsScraper:
         self,
         creator_id: str,
         creator_name: str,
-        known_video_ids: set[str],
+        known_titles: set[str],
     ) -> CreatorResult:
         max_retries = self.config["scraping"]["max_retries"]
         backoff_base = self.config["scraping"]["retry_backoff_base"]
@@ -394,7 +394,7 @@ class ManyVidsScraper:
         for attempt in range(max_retries + 1):
             try:
                 return await self._scrape_creator(
-                    creator_id, creator_name, known_video_ids
+                    creator_id, creator_name, known_titles
                 )
             except ScraperBlockedError as e:
                 last_error = e

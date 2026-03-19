@@ -2,6 +2,41 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.0] - 2026-03-19
+
+### Fixed
+- **Duplicate notifications across runs**: Notifications are now tracked per-video
+  per-channel in a new `video_notifications` table. Previously, if a Discord send
+  partially succeeded mid-batch, no videos in that batch were marked as notified,
+  causing all of them to be re-notified on every subsequent run.
+- **Duplicate video detection**: The uniqueness constraint on the `videos` table has
+  changed from `(creator_id, video_id)` to `(creator_id, title)`. ManyVids lists
+  some videos under multiple IDs (regular/mobile variants, different editions with
+  the same title); each distinct ID was previously treated as a new video and
+  notified separately.
+
+### Changed
+- **Per-channel notification tracking**: Each channel (email, discord) is now tracked
+  independently. If email succeeds but Discord fails, the next retry only attempts
+  Discord — email is not re-sent.
+- **Discord notifications sent one at a time with a configurable delay**: A
+  `delay_between_notifications` setting (default 10 s, configurable per channel
+  under `notifications.discord`) is enforced between every Discord webhook call,
+  including across creator boundaries and between the retry pass and the new-video
+  pass.
+- **Email notifications remain batched per creator**: All new videos for a creator
+  are sent in a single email, unchanged from previous behaviour.
+- Scraper early-stop now uses known titles instead of known video IDs, consistent
+  with the new uniqueness constraint.
+
+### Migration
+Existing databases are migrated automatically on first startup:
+- The `video_notifications` table is created.
+- Previously-notified videos (`notified_at IS NOT NULL`) are marked as notified on
+  both `email` and `discord` channels, preventing re-notification.
+- The `videos` table is rebuilt with `UNIQUE(creator_id, title)`; duplicate-titled
+  rows are deduplicated by keeping the earliest `first_seen`.
+
 ## [1.1.7] - 2026-03-09
 
 ### Fixed
