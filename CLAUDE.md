@@ -1,5 +1,10 @@
 # ManyVids Creator Monitor - Project Context
 
+## Project Overview
+A monitoring script to track new video uploads from specified ManyVids creators and send notifications when new content is detected.
+
+---
+
 ## Mandatory Local Validation Policy
 
 After any code change, always run linting/type checks in the project virtual environment before finishing:
@@ -19,9 +24,6 @@ Resolve all reported issues before commit/push. This is automatic and required o
 These steps are mandatory and performed automatically unless explicitly told otherwise.
 
 ---
-
-## Project Overview
-A monitoring script to track new video uploads from specified ManyVids creators and send notifications when new content is detected.
 
 ## Requirements
 
