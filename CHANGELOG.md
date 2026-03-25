@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.1] - 2026-03-24
+
+### Fixed
+- **Discord explicit content rejection (code 20009)**: When Discord rejects a thumbnail
+  attachment because the destination channel is not marked NSFW, the notifier now retries
+  the same notification without the image and appends a note to the embed footer explaining
+  the removal, rather than failing the notification entirely.
+
 ## [1.2.0] - 2026-03-19
 
 ### Fixed

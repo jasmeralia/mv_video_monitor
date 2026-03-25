@@ -22,6 +22,10 @@ DISCORD_WEBHOOK_UA = (
 )
 
 
+class DiscordExplicitContentError(Exception):
+    """Raised when Discord rejects an attachment due to explicit content (code 20009)."""
+
+
 def _section_label(video: dict) -> str:
     video_type = str(video.get("video_type", "")).strip().lower()
     if video_type == "mobile":
@@ -314,6 +318,13 @@ class DiscordNotifier(BaseNotifier):
                     )
                     time.sleep(max(0.1, retry_after))
                     continue
+                if resp.status_code == 400:
+                    try:
+                        code = resp.json().get("code")
+                    except Exception:
+                        code = None
+                    if code == 20009:
+                        raise DiscordExplicitContentError()
                 if resp.status_code not in (200, 204):
                     logger.error(
                         f"Discord webhook HTTP failure: {resp.status_code}; "
@@ -361,11 +372,25 @@ class DiscordNotifier(BaseNotifier):
             payload: dict[str, object] = {
                 "embeds": [embed],
             }
-            success = (
-                self._post_multipart_payload(payload, image_bytes)
-                if image_bytes
-                else self._post_json_payload(payload)
-            )
+            try:
+                success = (
+                    self._post_multipart_payload(payload, image_bytes)
+                    if image_bytes
+                    else self._post_json_payload(payload)
+                )
+            except DiscordExplicitContentError:
+                logger.warning(
+                    f"Discord rejected thumbnail for {creator_display_name} "
+                    f"video_id={v.get('video_id')} due to explicit content policy "
+                    f"(channel may not be marked NSFW); retrying without image"
+                )
+                embed.pop("image", None)
+                detected_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                embed["footer"] = {
+                    "text": f"Detected: {detected_ts} | Thumbnail removed: channel not marked NSFW"
+                }
+                payload["embeds"] = [embed]
+                success = self._post_json_payload(payload)
             if not success:
                 logger.error(
                     f"Failed to send Discord notification for {creator_display_name} "
