@@ -1,4 +1,4 @@
-playwright==1.44.0
+playwright==1.59.0
 pyyaml==6.0.1
 requests==2.32.3
 types-requests==2.32.0.20250328
