@@ -7,11 +7,11 @@ A monitoring script to track new video uploads from specified ManyVids creators 
 
 ## Mandatory Local Validation Policy
 
-After any code change, always run linting/type checks in the project virtual environment before finishing:
+After any code change, always run linting/type checks before finishing:
 
-1. `ruff check src`
-2. `ruff format --check src`
-3. `mypy src`
+```bash
+make lint-fix && make lint
+```
 
 Resolve all reported issues before commit/push. This is automatic and required on every change unless explicitly told otherwise.
 
@@ -22,6 +22,11 @@ Resolve all reported issues before commit/push. This is automatic and required o
 3. For every bumped version, create a Git tag (for example `v1.2.3`) and push it to GitHub.
 
 These steps are mandatory and performed automatically unless explicitly told otherwise.
+
+## Git Workflow
+
+- Never push commits directly to `master`. Always open a pull request from a feature/fix branch.
+- Use squash merge strategy when merging pull requests.
 
 ---
 
