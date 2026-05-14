@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.2] - 2026-05-14
+
+### Fixed
+- Remove unused `os` import from `main.py` (ruff F401).
+
 ## [1.2.1] - 2026-03-24
 
 ### Fixed
