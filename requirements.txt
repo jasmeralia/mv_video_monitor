@@ -4,3 +4,5 @@ requests==2.34.1
 types-requests==2.33.0.20260513
 ruff
 mypy
+
+pydantic-settings>=2.0

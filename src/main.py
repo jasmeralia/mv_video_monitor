@@ -11,6 +11,7 @@ from importlib.metadata import PackageNotFoundError, version as package_version
 from .database import Database
 from .notifier import BaseNotifier, create_notifiers
 from .scraper import ManyVidsScraper
+from .settings import settings
 from .utils import load_config, setup_logging
 from .version import get_app_version
 
@@ -271,14 +272,11 @@ async def _inter_creator_delay(config: dict) -> None:
 
 
 def main() -> None:
-    config_path = os.environ.get("CONFIG_PATH", "/config/config.yaml")
-    dry_run = "--dry-run" in sys.argv or os.environ.get("DRY_RUN", "").lower() in (
-        "1",
-        "true",
-    )
-    run_once = os.environ.get("RUN_ONCE", "").lower() in ("1", "true")
-    poll_interval = int(os.environ.get("POLL_INTERVAL_SECONDS", "86400"))
-    poll_jitter = int(os.environ.get("POLL_JITTER_SECONDS", "1800"))
+    config_path = settings.config_path
+    dry_run = "--dry-run" in sys.argv or settings.dry_run
+    run_once = settings.run_once
+    poll_interval = settings.poll_interval_seconds
+    poll_jitter = settings.poll_jitter_seconds
 
     if run_once:
         exit_code = asyncio.run(run_monitor(config_path, dry_run=dry_run))
