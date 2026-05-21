@@ -1,7 +1,7 @@
 playwright==1.59.0
 pyyaml==6.0.3
 requests==2.34.1
-types-requests==2.33.0.20260513
+types-requests==2.33.0.20260518
 ruff
 mypy
 
